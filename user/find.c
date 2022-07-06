@@ -35,8 +35,6 @@ find(char*path,char*name){
                 printf("find: cannot stat %s\n", buf);
                 continue;
             }
-            if(de.inum == 0)
-                ;
             if(st.type==T_FILE&&strcmp(de.name,name)==0){
                 printf("%s\n", buf);
             }
