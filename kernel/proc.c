@@ -277,10 +277,6 @@ fork(void)
 
   np->parent = p;
 
-  //copy mask from parent
-  //test children passed
-  np->trace_mask=p->trace_mask;
-
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -487,10 +483,14 @@ scheduler(void)
       }
       release(&p->lock);
     }
+#if !defined (LAB_FS)
     if(found == 0) {
       intr_on();
       asm volatile("wfi");
     }
+#else
+    ;
+#endif
   }
 }
 
@@ -696,17 +696,4 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
-}
-
-uint64
-get_used_proc(void){
-  struct proc *p;
-  int cnt=0;
-  for(p = proc; p < &proc[NPROC]; p++) {
-    acquire(&p->lock);
-    if(p->state != UNUSED)
-      cnt++;
-    release(&p->lock);
-  }
-  return cnt;
 }
