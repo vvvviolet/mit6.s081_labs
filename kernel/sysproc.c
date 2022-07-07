@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -98,14 +99,28 @@ sys_uptime(void)
 
 uint64 
 sys_trace(void){
-  int mask;//用户调用时传入的参数，相当于argv[1]
+  int mask;//用户调用时传入的参数
   if(argint(0, &mask) < 0)
     return -1;
   // int num;
   struct proc *p = myproc();
   p->trace_mask=mask;
+  
+  return 0;
+}
 
-  // num = p->trapframe->a7;//系统调用号
+uint64
+sys_sysinfo(void){
+  uint64 ip;//获取地址
+  if(argaddr(0, &ip) < 0)
+    return -1;
+  struct proc *p=myproc();
+  struct sysinfo sf;
+  sf.freemem=get_free_mem_bytes();
+  sf.nproc=get_used_proc();
+  //从内核到用户            目的  源  长度
+  if(copyout(p->pagetable, ip, (char*)&sf, sizeof(struct sysinfo)) < 0)
+      return -1;
   
   return 0;
 }
