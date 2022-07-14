@@ -43,12 +43,23 @@ sys_sbrk(void)
 {
   int addr;
   int n;
+  struct proc *p=myproc();
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
+  addr = p->sz;
   if(growproc(n) < 0)
     return -1;
+  
+  //lab3 part3
+  if(n>0){
+    vmcopypage(p->pagetable,p->kpagetable,addr,n);
+  }else{
+    for(int i = addr-PGSIZE ; i>=addr+n ; i -= PGSIZE){
+      uvmunmap(p->kpagetable,i,1,0);
+    }
+  }
+  //lab3 part3
   return addr;
 }
 
