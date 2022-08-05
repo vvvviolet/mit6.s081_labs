@@ -127,6 +127,14 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  if((p->alarm_trapframe = (struct trapframe *)kalloc())==0){
+    release(&p->lock);
+    return 0;
+  }
+  p->alarm_ticks = 0;
+  p->alarm_inteval = 0;
+  p->alarm_onexec = 0;
+  p->alarm_handler = 0;
   return p;
 }
 
@@ -149,6 +157,16 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+
+  if(p->alarm_trapframe)
+    kfree((void*)p->alarm_trapframe);
+  p->alarm_trapframe = 0;
+  
+  p->alarm_ticks = 0;
+  p->alarm_inteval = 0;
+  p->alarm_onexec = 0;
+  p->alarm_handler = 0;
+
   p->state = UNUSED;
 }
 
@@ -229,7 +247,7 @@ userinit(void)
   p->cwd = namei("/");
 
   p->state = RUNNABLE;
-
+ 
   release(&p->lock);
 }
 
@@ -463,7 +481,7 @@ scheduler(void)
   for(;;){
     // Avoid deadlock by ensuring that devices can interrupt.
     intr_on();
-    
+        
     int found = 0;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
