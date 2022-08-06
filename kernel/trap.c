@@ -67,7 +67,23 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else {
+  }
+  //lab5 lazy
+  else if(r_scause() == 13 || r_scause() == 15){
+    uint64 va = r_stval();
+    //proc.c
+    if(lazy_alloc_va(va)){
+        if(lazy_alloc(va) < 0){
+          printf("lazy alloc failed\n");
+          p->killed = 1;
+        }
+    }
+    else{
+      printf("usertrap: invalid visiting\n");
+      p->killed = 1;
+    }
+  }
+  else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
     p->killed = 1;
