@@ -9,6 +9,15 @@
 #include "riscv.h"
 #include "defs.h"
 
+
+#define PA2PGREF_ID(p) (((p)-KERNBASE)/PGSIZE)
+#define PGREF_MAX_ENTRIES PA2PGREF_ID(PHYSTOP)
+#define PA2PGREF(p) pageref[PA2PGREF_ID((uint64)(p))]
+
+struct spinlock pgreflock; // 用于 pageref 数组的锁，防止竞态条件引起内存泄漏
+int pageref[PGREF_MAX_ENTRIES]; // 从 KERNBASE 开始到 PHYSTOP 之间的每个物理页的引用计数
+
+
 void freerange(void *pa_start, void *pa_end);
 
 extern char end[]; // first address after kernel.
@@ -27,6 +36,9 @@ void
 kinit()
 {
   initlock(&kmem.lock, "kmem");
+  //lab6 cow
+  initlock(&pgreflock, "pgref");
+  //
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -51,15 +63,25 @@ kfree(void *pa)
   if(((uint64)pa % PGSIZE) != 0 || (char*)pa < end || (uint64)pa >= PHYSTOP)
     panic("kfree");
 
+  acquire(&pgreflock);
+  if(--PA2PGREF(pa) <= 0){
+    memset(pa, 1, PGSIZE);
+    r  =(struct run*)pa;
+    acquire(&kmem.lock);
+    r->next = kmem.freelist;
+    kmem.freelist = r;
+    release(&kmem.lock);
+  }
+  release(&pgreflock);
   // Fill with junk to catch dangling refs.
-  memset(pa, 1, PGSIZE);
+  // memset(pa, 1, PGSIZE);
 
-  r = (struct run*)pa;
+  // r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  // acquire(&kmem.lock);
+  // r->next = kmem.freelist;
+  // kmem.freelist = r;
+  // release(&kmem.lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -76,7 +98,39 @@ kalloc(void)
     kmem.freelist = r->next;
   release(&kmem.lock);
 
-  if(r)
+  if(r){
     memset((char*)r, 5, PGSIZE); // fill with junk
+    PA2PGREF(r) = 1;
+  }
+
   return (void*)r;
+}
+
+void *
+kcopyderef(void *pa)
+{
+  acquire(&pgreflock);
+
+  //只有1个引用
+  if(PA2PGREF(pa) <= 1){
+    release(&pgreflock);
+    return pa;
+  }
+
+  uint64 npa = (uint64)kalloc();
+  if(npa == 0){
+    release(&pgreflock);
+    return 0;
+  }
+  memmove((void*)npa, (void*)pa, PGSIZE);
+
+  PA2PGREF(pa)--;
+  release(&pgreflock);
+  return (void*)npa;
+}
+
+void krefpage(void *pa){
+  acquire(&pgreflock);
+  PA2PGREF(pa)++;
+  release(&pgreflock);
 }

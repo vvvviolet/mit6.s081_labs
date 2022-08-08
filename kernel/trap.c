@@ -6,6 +6,7 @@
 #include "proc.h"
 #include "defs.h"
 
+
 struct spinlock tickslock;
 uint ticks;
 
@@ -67,19 +68,10 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  }
-  //lab5 lazy
-  else if(r_scause() == 13 || r_scause() == 15){
-    uint64 va = r_stval();
-    //proc.c
-    if(lazy_alloc_va(va)){
-        if(lazy_alloc(va) < 0){
-          printf("lazy alloc failed\n");
-          p->killed = 1;
-        }
-    }
-    else{
-      printf("usertrap: invalid visiting\n");
+  } 
+  
+  else if((r_scause() == 13 || r_scause() == 15) && iscow(p->pagetable, r_stval())){
+    if((cowalloc(p->pagetable, r_stval())) < 0){
       p->killed = 1;
     }
   }
