@@ -3,12 +3,8 @@
 #include "memlayout.h"
 #include "elf.h"
 #include "riscv.h"
-#include "spinlock.h"
-#include "proc.h"
 #include "defs.h"
 #include "fs.h"
-
-
 
 /*
  * the kernel's page table.
@@ -33,9 +29,6 @@ kvminit()
 
   // virtio mmio disk interface
   kvmmap(VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
-
-  // CLINT
-  kvmmap(CLINT, CLINT, 0x10000, PTE_R | PTE_W);
 
   // PLIC
   kvmmap(PLIC, PLIC, 0x400000, PTE_R | PTE_W);
@@ -72,12 +65,11 @@ kvminithart()
 //   21..29 -- 9 bits of level-1 index.
 //   12..20 -- 9 bits of level-0 index.
 //    0..11 -- 12 bits of byte offset within the page.
-pte_t *
+static pte_t *
 walk(pagetable_t pagetable, uint64 va, int alloc)
 {
   if(va >= MAXVA)
-    return 0;
-    // panic("walk");
+    panic("walk");
 
   for(int level = 2; level > 0; level--) {
     pte_t *pte = &pagetable[PX(level, va)];
@@ -124,26 +116,6 @@ kvmmap(uint64 va, uint64 pa, uint64 sz, int perm)
 {
   if(mappages(kernel_pagetable, va, sz, pa, perm) != 0)
     panic("kvmmap");
-}
-
-// translate a kernel virtual address to
-// a physical address. only needed for
-// addresses on the stack.
-// assumes va is page aligned.
-uint64
-kvmpa(uint64 va)
-{
-  uint64 off = va % PGSIZE;
-  pte_t *pte;
-  uint64 pa;
-  
-  pte = walk(kernel_pagetable, va, 0);
-  if(pte == 0)
-    panic("kvmpa");
-  if((*pte & PTE_V) == 0)
-    panic("kvmpa");
-  pa = PTE2PA(*pte);
-  return pa+off;
 }
 
 // Create PTEs for virtual addresses starting at va that refer to
@@ -316,25 +288,22 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  // char *mem;
+  char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
-    *pte &= (~PTE_W);
-    *pte |= (PTE_COW);
     pa = PTE2PA(*pte);
     flags = PTE_FLAGS(*pte);
-    // if((mem = kalloc()) == 0)
-    // goto err;
-    // memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
-      // kfree(mem);
+    if((mem = kalloc()) == 0)
+      goto err;
+    memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
+      kfree(mem);
       goto err;
     }
-    krefpage((void*)pa);
   }
   return 0;
 
@@ -364,9 +333,6 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
 
-  if(iscow(pagetable, dstva))
-    cowalloc(pagetable,dstva);
-
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
@@ -391,7 +357,7 @@ int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
   uint64 n, va0, pa0;
- 
+
   while(len > 0){
     va0 = PGROUNDDOWN(srcva);
     pa0 = walkaddr(pagetable, va0);
@@ -451,38 +417,3 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
-
-int iscow(pagetable_t pgt, uint64 va){
-  pte_t *pte = walk(pgt, va, 0);
-   struct proc *p = myproc();
-  
-  return va < p->sz // 在进程内存范围内
-    && ((pte = walk(pgt, va, 0))!=0)
-    && (*pte & PTE_V) // 页表项存在
-    && (*pte & PTE_COW); // 页是一个懒复制页
-}
-
-int cowalloc(pagetable_t pgt, uint64 va){
-  pte_t *pte;
-  uint64 pa, npg;
-  uint flags;
-  
-  va = PGROUNDDOWN(va);
-  pte = walk(pgt, va, 0);
-
-  if(pte == 0){
-    panic("cowalloc: walk");
-  }
-  pa = PTE2PA(*pte);
-  npg = (uint64) kcopyderef((void*)pa);
-  if(npg == 0)
-    return -1;
-  
-  flags = (PTE_FLAGS(*pte) | PTE_W) & ~PTE_COW;
-  uvmunmap(pgt, PGROUNDDOWN(va), 1, 0);
-  if(mappages(pgt, va, 1, npg, flags) == -1){
-    panic("cowalloc: mappages");
-  }
-  return 0;
-}
-
