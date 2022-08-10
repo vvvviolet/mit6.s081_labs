@@ -514,8 +514,6 @@ sched(void)
     panic("sched interruptible");
 
   intena = mycpu()->intena;
-  // info("sched(): proc_%d call swtch.\n", myproc()->pid);
-  // info("sched(): mycpu->context->ra: %p\n", mycpu()->context.ra);
   swtch(&p->context, &mycpu()->context);
   mycpu()->intena = intena;
 }
