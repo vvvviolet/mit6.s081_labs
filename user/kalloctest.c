@@ -34,6 +34,7 @@ int ntas(int print)
   n = atoi(c+2);
   if(print)
     printf("%s", buf);
+    
   return n;
 }
 
