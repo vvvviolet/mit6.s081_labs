@@ -8,7 +8,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
-
+struct vma;
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);
@@ -171,6 +171,7 @@ uint64          walkaddr(pagetable_t, uint64);
 int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
+void            vmaunmap(pagetable_t pagetable, uint64 va, uint64 nbytes, struct vma *v);
 
 // plic.c
 void            plicinit(void);
@@ -185,3 +186,7 @@ void            virtio_disk_intr(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+
+
+//sysfile.c
+int vmatrylazytouch(uint64 va);

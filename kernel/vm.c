@@ -5,6 +5,11 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "fcntl.h"
+#include "spinlock.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -145,8 +150,10 @@ mappages(pagetable_t pagetable, uint64 va, uint64 size, uint64 pa, int perm)
   for(;;){
     if((pte = walk(pagetable, a, 1)) == 0)
       return -1;
-    if(*pte & PTE_V)
+    if(*pte & PTE_V){
+      printf("pgt: %p, va: %p, size: %p, pa: %p, perm: %d\n", pagetable, va, size, pa, perm);
       panic("remap");
+    }
     *pte = PA2PTE(pa) | perm | PTE_V;
     if(a == last)
       break;
@@ -427,5 +434,41 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return 0;
   } else {
     return -1;
+  }
+}
+
+void
+vmaunmap(pagetable_t pagetable, uint64 va, uint64 nbytes, struct vma *v)
+{
+  uint64 a;
+  pte_t *pte;
+
+  // printf("unmapping %d bytes from %p\n",nbytes, va);
+
+  // borrowed from "uvmunmap"
+  for(a = va; a < va + nbytes; a += PGSIZE){
+    if((pte = walk(pagetable, a, 0)) == 0)
+      panic("sys_munmap: walk");
+    if(PTE_FLAGS(*pte) == PTE_V)
+      panic("sys_munmap: not a leaf");
+    if(*pte & PTE_V){
+      uint64 pa = PTE2PA(*pte);
+      if((*pte & PTE_D) && (v->flags & MAP_SHARED)) { // dirty, need to write back to disk
+        begin_op();
+        ilock(v->pf->ip);
+        uint64 aoff = a - v->vastart; // offset relative to the start of memory range
+        if(aoff < 0) { // if the first page is not a full 4k page
+          writei(v->pf->ip, 0, pa + (-aoff), v->offset, PGSIZE + aoff);
+        } else if(aoff + PGSIZE > v->sz){  // if the last page is not a full 4k page
+          writei(v->pf->ip, 0, pa, v->offset + aoff, v->sz - aoff);
+        } else { // full 4k pages
+          writei(v->pf->ip, 0, pa, v->offset + aoff, PGSIZE);
+        }
+        iunlock(v->pf->ip);
+        end_op();
+      }
+      kfree((void*)pa);
+      *pte = 0; 
+    }
   }
 }
