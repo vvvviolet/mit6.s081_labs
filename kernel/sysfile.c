@@ -304,7 +304,7 @@ sys_open(void)
       return -1;
     }
   } else {
-      int symlink_depth = 0;
+    int symlink_depth = 0;
     while(1) { // recursively follow symlinks
       if((ip = namei(path)) == 0){
         end_op();
@@ -327,6 +327,11 @@ sys_open(void)
       } else {
         break;
       }
+    }
+    if(ip->type == T_DIR && omode != O_RDONLY){
+      iunlockput(ip);
+      end_op();
+      return -1;
     }
   }
 
