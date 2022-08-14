@@ -65,6 +65,8 @@ exec(char *path, char **argv)
 
   p = myproc();
   uint64 oldsz = p->sz;
+  // if(p->pid==1)
+  //   printf("sz: %d\n",p->sz); // 4096 
 
   // Allocate two pages at the next page boundary.
   // Use the second as the user stack.
@@ -76,6 +78,7 @@ exec(char *path, char **argv)
   uvmclear(pagetable, sz-2*PGSIZE);
   sp = sz;
   stackbase = sp - PGSIZE;
+  printf("sp: %d\nsb: %d\n",sz, stackbase);
 
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
@@ -121,8 +124,9 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
 
-  if(p->pid==1) 
+  if(p->pid==1) {
     vmprint(p->pagetable);
+  }
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
